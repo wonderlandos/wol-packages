@@ -142,12 +142,17 @@ cat > "$STAGE/{info_dir}/Info.json" <<'WOL_INFO'
 cp "$STAGE/{info_dir}/Info.json" "$OUT/{base}.Info.json"
 find "$STAGE" -type f > "$WORK/files"
 : > "$WORK/libs"
+: > "$WORK/ldd.all"
 while read -r f; do
   file -b "$f" | grep -q '^ELF' || continue
   strip --strip-unneeded "$f" 2>/dev/null || true
-  ldd "$f" 2>/dev/null | awk '$2 == "=>" {{ print $1, $3 }}' >> "$WORK/libs" || true
+  ldd "$f" 2>/dev/null | awk '$2 == "=>" {{ print $1, $3 }}' > "$WORK/ldd" || true
+  cat "$WORK/ldd" >> "$WORK/ldd.all"
+  # direct dependencies only: the libraries this file names (NEEDED), not theirs
+  readelf -d "$f" 2>/dev/null | sed -n 's/.*NEEDED.*\[\(.*\)\].*/\1/p' > "$WORK/needed" || true
+  awk 'NR == FNR {{ n[$1] = 1; next }} ($1 in n)' "$WORK/needed" "$WORK/ldd" >> "$WORK/libs"
 done < "$WORK/files"
-if grep ' not$' "$WORK/libs"; then echo "libraries not found (above)"; exit 1; fi
+if grep ' not$' "$WORK/ldd.all"; then echo "libraries not found (above)"; exit 1; fi
 
 echo "==> icon"
 for i in "$STAGE/usr/local/share/icons/hicolor/256x256/apps/{icon}.png" "$STAGE/usr/local/share/icons/hicolor/512x512/apps/{icon}.png"; do
@@ -263,6 +268,7 @@ mod tests {
             "share/wolos/packages/io.github.adbeveridge.Raider/Info.json",
             &format!("<<'WOL_INFO'\n{}WOL_INFO\n", r.info_json()),
             "pkg which -q",
+            "readelf -d \"$f\"",
             "pkg create -r \"$STAGE\" -M \"$WORK/+MANIFEST\" -p \"$WORK/plist\" -o \"$OUT\"\n",
             "\"origin\":\"wol/raider\"",
             "\"prefix\":\"/usr/local\"",
