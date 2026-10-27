@@ -1,0 +1,24 @@
+# Drafted with `wol-port new`, finished by hand.
+id = "com.github.hugolabe.Wike"
+package = "wike"
+version = "3.2.1"
+name = "Wike"
+summary = "Search and read Wikipedia articles"
+license = "GPL-3.0-or-later"
+homepage = "https://github.com/hugolabe/Wike"
+categories = ["Work"]
+capabilities = ["network"]
+icon = "com.github.hugolabe.Wike"
+entry = "bin/wike"
+
+[source]
+git = "https://github.com/hugolabe/Wike.git"
+tag = "3.2.1"
+
+[build]
+system = "meson"
+
+[deps]
+build = ["AppStream", "desktop-file-utils", "gettext-tools", "glib"]
+run = ["gtk4", "libadwaita", "libsoup3", "py312-pygobject", "python3", "webkit2-gtk_60"]
+

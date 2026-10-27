@@ -1,0 +1,35 @@
+# Drafted with `wol-port new`, finished by hand.
+id = "com.rafaelmardojai.Blanket"
+package = "blanket"
+version = "0.8.0"
+name = "Blanket"
+summary = "Listen to ambient sounds"
+license = "GPL-3.0-or-later"
+homepage = "https://github.com/rafaelmardojai/blanket"
+categories = ["Play"]
+capabilities = ["background"]
+icon = "com.rafaelmardojai.Blanket"
+entry = "bin/blanket"
+
+[source]
+git = "https://github.com/rafaelmardojai/blanket.git"
+tag = "0.8.0"
+
+[build]
+system = "meson"
+
+[deps]
+build = ["AppStream", "blueprint-compiler", "desktop-file-utils", "gettext-tools", "glib"]
+run = [
+    "gstreamer1",
+    "gstreamer1-plugins",
+    "gstreamer1-plugins-bad",
+    "gstreamer1-plugins-good",
+    "gstreamer1-plugins-ogg",
+    "gstreamer1-plugins-vorbis",
+    "gtk4",
+    "libadwaita",
+    "py312-pygobject",
+    "python3",
+]
+

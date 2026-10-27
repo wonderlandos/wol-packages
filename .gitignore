@@ -1,0 +1,6 @@
+/tools/wol-port/target/
+/work/
+/out/
+*.key
+*.pem
+!*.pub.pem

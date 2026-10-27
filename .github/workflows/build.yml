@@ -1,0 +1,202 @@
+# Build changed recipes natively in FreeBSD 15.1, pack .wol files; on main publish Releases + index.
+name: build
+
+on:
+  push:
+    branches: [main]
+    paths: ['recipes/**', 'tools/**', '.github/workflows/build.yml']
+  pull_request:
+    paths: ['recipes/**', 'tools/**', '.github/workflows/build.yml']
+  workflow_dispatch:
+    inputs:
+      recipe:
+        description: 'Recipe directory under recipes/, or "all"'
+        required: true
+        default: all
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      recipes: ${{ steps.list.outputs.recipes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Test wol-port
+        run: |
+          cargo test --locked --manifest-path tools/wol-port/Cargo.toml
+          cargo run -q --locked --manifest-path tools/wol-port/Cargo.toml -- check recipes/*/
+      - name: Changed recipes
+        id: list
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT: ${{ github.event.inputs.recipe }}
+          BEFORE: ${{ github.event.before }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -eu
+          all() { ls recipes; }
+          changed() { git diff --name-only "$@" -- recipes | cut -d/ -f2; }
+          case "$EVENT" in
+            workflow_dispatch)
+              if [ "$INPUT" = all ]; then all; else printf '%s\n' "$INPUT"; fi ;;
+            pull_request)
+              changed "origin/$BASE_REF...HEAD" ;;
+            *)
+              if git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then changed "$BEFORE" HEAD; else all; fi ;;
+          esac | sort -u | while read -r r; do
+            case "$r" in *[!A-Za-z0-9._+-]*|'') continue ;; esac
+            [ -f "recipes/$r/recipe.toml" ] && echo "$r"
+          done > recipes.txt
+          cat recipes.txt
+          echo "recipes=$(jq -R -s -c 'split("\n") | map(select(length > 0))' recipes.txt)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.recipes != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        recipe: ${{ fromJSON(needs.plan.outputs.recipes) }}
+    env:
+      R: ${{ matrix.recipe }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: wol-port
+        run: |
+          cargo build -q --release --locked --manifest-path tools/wol-port/Cargo.toml
+          echo "WP=$PWD/tools/wol-port/target/release/wol-port" >> "$GITHUB_ENV"
+      - name: Plan
+        run: |
+          set -eu
+          mkdir -p build out
+          "$WP" plan "recipes/$R" > build/build.sh
+          "$WP" info "recipes/$R" > build/Info.json
+          echo "BASE=$(jq -r '.package + "-" + .version' build/Info.json)" >> "$GITHUB_ENV"
+      - name: Build, install and remove in FreeBSD 15.1
+        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
+        with:
+          release: '15.1'
+          envs: 'R'
+          run: |
+            freebsd-version -ku
+            WOL_WORK=/var/tmp/wol sh build/build.sh
+      - name: Pack
+        run: |
+          set -eu
+          cmp build/Info.json "out/$BASE.Info.json"
+          set -- --info "out/$BASE.Info.json" --payload "out/$BASE.pkg"
+          if [ -f "out/$BASE.icon.png" ]; then set -- "$@" --icon "out/$BASE.icon.png"; fi
+          "$WP" pack "$@" -o "out/$BASE.wol"
+      - name: Signing self-test (throwaway key)
+        run: |
+          set -eu
+          t=$(mktemp -d)
+          openssl genpkey -algorithm ed25519 -out "$t/k.pem"
+          openssl pkey -in "$t/k.pem" -pubout -out "$t/k.pub"
+          openssl genpkey -algorithm ed25519 | openssl pkey -pubout -out "$t/other.pub"
+          cp "out/$BASE.wol" "$t/x.wol"
+          "$WP" sign "$t/x.wol" "$t/k.pem"
+          "$WP" verify "$t/x.wol" "$t/k.pub"
+          if "$WP" verify "$t/x.wol" "$t/other.pub"; then echo "a wrong key verified"; exit 1; fi
+          mkdir "$t/m" && tar -xf "$t/x.wol" -C "$t/m" SHA256 SHA256.sig
+          openssl pkeyutl -verify -pubin -inkey "$t/k.pub" -rawin -in "$t/m/SHA256" -sigfile "$t/m/SHA256.sig"
+          rm -rf "$t"
+      - name: Sign
+        env:
+          WOL_SIGNING_KEY: ${{ secrets.WOL_SIGNING_KEY }}
+        run: |
+          set -eu
+          if [ -z "${WOL_SIGNING_KEY:-}" ]; then
+            echo "::notice::WOL_SIGNING_KEY is not set: $BASE.wol stays unsigned"
+            exit 0
+          fi
+          k="$RUNNER_TEMP/wol.key"
+          (umask 077; printf '%s\n' "$WOL_SIGNING_KEY" > "$k")
+          "$WP" sign "out/$BASE.wol" "$k"
+          rm -f "$k"
+      - name: Verify
+        run: '"$WP" verify "out/$BASE.wol"'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wol-${{ matrix.recipe }}
+          path: out/${{ env.BASE }}.wol
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.build.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: publish
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SITE: https://wonderlandos.github.io/wol-packages
+      RELEASES: https://github.com/${{ github.repository }}/releases/download
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: wol-port
+        run: |
+          cargo build -q --release --locked --manifest-path tools/wol-port/Cargo.toml
+          echo "WP=$PWD/tools/wol-port/target/release/wol-port" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: wol-*
+          merge-multiple: true
+          path: new
+      - name: Releases
+        run: |
+          set -eu
+          for f in new/*.wol; do
+            [ -f "$f" ] || continue
+            tag=$(basename "$f" .wol)
+            gh release view "$tag" >/dev/null 2>&1 ||
+              gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" \
+                --notes "Built natively for FreeBSD 15 (amd64) from recipes/ at $GITHUB_SHA."
+            gh release upload "$tag" "$f" --clobber
+          done
+      - name: Index
+        env:
+          WOL_SIGNING_KEY: ${{ secrets.WOL_SIGNING_KEY }}
+        run: |
+          set -eu
+          mkdir -p all site/icons
+          gh release list --limit 1000 --json tagName --jq '.[].tagName' | while read -r t; do
+            gh release download "$t" -p '*.wol' -D all --clobber || true
+          done
+          set --
+          for f in $(ls all/*.wol 2>/dev/null | sort -V); do set -- "$@" "$f"; done
+          "$WP" index --index site/index.json --releases "$RELEASES" --icons "$SITE/icons" "$@"
+          for f in "$@"; do
+            id=$(tar -xOf "$f" Info.json | jq -r .id)
+            tar -xOf "$f" icon.png > "site/icons/$id.png" 2>/dev/null || rm -f "site/icons/$id.png"
+          done
+          if [ -n "${WOL_SIGNING_KEY:-}" ]; then
+            k="$RUNNER_TEMP/wol.key"
+            (umask 077; printf '%s\n' "$WOL_SIGNING_KEY" > "$k")
+            "$WP" index --index site/index.json --releases "$RELEASES" --icons "$SITE/icons" --key "$k" "$@"
+            rm -f "$k"
+          else
+            echo "::notice::WOL_SIGNING_KEY is not set: index.json stays unsigned"
+          fi
+          cat site/index.json
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+project(Notes VERSION 2.4.1 LANGUAGES CXX)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
+find_package(ZLIB REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SECRET REQUIRED IMPORTED_TARGET libsecret-1 sqlite3>=3.30)

@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=File Shredder
+Comment=Delete files for good
+Exec=shredder
+Icon=org.example.Shredder
+Categories=GTK;GNOME;Utility;

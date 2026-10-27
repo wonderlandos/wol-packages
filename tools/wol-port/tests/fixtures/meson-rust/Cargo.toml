@@ -1,0 +1,13 @@
+[package]
+name = "keytap"
+version = "7.0.0"
+edition = "2021"
+
+[dependencies]
+gtk = { package = "gtk4", version = "0.10", features = ["v4_14"] }
+adw = { package = "libadwaita", version = "0.8" }
+serde = { version = "1", features = ["derive"] }
+gstreamer-play-sys = "0.24"
+
+[dependencies.rand]
+version = "0.9"

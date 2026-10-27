@@ -1,0 +1,24 @@
+id = "io.github.adbeveridge.Raider"
+package = "raider"
+version = "3.1.0"
+name = "File Shredder"
+summary = "Securely delete your files"
+license = "GPL-3.0-or-later"
+homepage = "https://github.com/ADBeveridge/raider"
+categories = ["Work"]
+capabilities = ["files"]
+icon = "io.github.adbeveridge.Raider"
+entry = "bin/raider"
+
+[source]
+git = "https://github.com/ADBeveridge/raider.git"
+tag = "v3.1.0"
+
+[build]
+system = "meson"
+options = ["-Dfoo=bar"]
+env = { WOL_TEST = "a b" }
+
+[deps]
+build = ["meson", "ninja", "pkgconf"]
+run = ["gtk4", "libadwaita"]
