@@ -19,6 +19,6 @@ tag = "v7.0"
 system = "meson"
 
 [deps]
-build = ["AppStream", "desktop-file-utils", "gettext-tools", "glib", "gsed", "rust"]
+build = ["AppStream", "blueprint-compiler", "desktop-file-utils", "gettext-tools", "glib", "gsed", "rust"]
 run = ["gtk4", "libadwaita"]
 

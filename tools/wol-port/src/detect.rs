@@ -300,6 +300,13 @@ pub fn inspect(dir: &Path) -> Inspection {
     {
         ins.project = Some(name);
     }
+    // Blueprint UI files are compiled at build time (meson or a Rust proc macro).
+    if files
+        .iter()
+        .any(|p| p.extension().is_some_and(|e| e == "blp"))
+    {
+        add(&mut ins.deps, Kind::Prog, "blueprint-compiler");
+    }
     // Python apps: GObject introspection namespaces
     let mut python = files.iter().any(|p| {
         p.file_name().is_some_and(|f| f == "meson.build") && read(p).contains("import('python')")
@@ -614,6 +621,7 @@ mod tests {
             (Crate, "gstreamer-play-sys"),
             (Crate, "rand"),
             (Prog, "cargo"),
+            (Prog, "blueprint-compiler"),
         ] {
             assert!(has(&r, k, n), "meson-rust {k:?} {n}: {:?}", r.deps);
         }

@@ -1,7 +1,7 @@
-# Drafted with `wol-port new`, finished by hand.
+# Drafted with `wol-port new`, finished by hand. 2.2 needs gtk4 4.22; FreeBSD has 4.20.
 id = "com.github.finefindus.eyedropper"
 package = "eyedropper"
-version = "2.2.1"
+version = "2.1.0"
 name = "Eyedropper"
 summary = "Pick and format colors"
 license = "GPL-3.0"
@@ -13,7 +13,7 @@ entry = "bin/eyedropper"
 
 [source]
 git = "https://github.com/FineFindus/eyedropper.git"
-tag = "v2.2.1"
+tag = "v2.1.0"
 
 [build]
 system = "meson"
